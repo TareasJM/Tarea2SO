@@ -3,6 +3,13 @@
 #include <sys/sysinfo.h>
 #include <unistd.h>
 #include <errno.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <stdlib.h>
+
+//Tamaño y nombre de memoria compartida
+#define SHMSZ 368 // 2 ints + 6 strings de 60 chars c/u
+#define SHMK 1234 // nombre random
 
 void upTime();
 void RamInfo();
@@ -19,60 +26,91 @@ int main (int argc, char const *argv[])
   int rep, wait;
   sscanf(argv[1], "%d", &rep);
   sscanf(argv[2], "%d", &wait);
-  
-  // analiza el sistema rep veces
-  while(rep-- > 0)
+
+  int shmid;
+
+  // pide la memoria compartida
+  if ((shmid = shmget(SHMK, SHMSZ, IPC_CREAT | 0666)) < 0)
   {
-  	// primer fork
-		pid_t pid = fork();
-		if(pid == -1)
-		{
-		  printf("Error al crear proceso hijo \n");
-			printf("%s", strerror(errno));
-			return 0;
-		}
-		if(pid == 0)
-		{
-		  upTime();
-			return 0;
-		}
-
-  	// segundo fork
-		pid = fork();
-		if(pid == -1)
-		{
-		  printf("Error al crear proceso hijo \n");
-			printf("%s", strerror(errno));
-			return 0;
-		}
-		if(pid == 0)
-		{
-		  RamInfo();
-			return 0;
-		}
-
-  	// tercer fork
-		pid = fork();
-		if(pid == -1)
-		{
-		  printf("Error al crear proceso hijo \n");
-			printf("%s", strerror(errno));
-			return 0;
-		}
-		if(pid == 0)
-		{
-		  ProcsInfo();
-			return 0;
-		}     
-
-		// espera wait segundos
-		sleep(wait);
-		// salto de linea para mejor lectura
-		printf("\n");
+	  printf("Error: shmget\n");
+	  return 1;
   }
   
+  // analiza el sistema rep veces
+	// primer fork
+	pid_t pid = fork();
+	if(pid == -1)
+	{
+	  printf("Error al crear proceso hijo \n");
+		printf("%s", strerror(errno));
+		return 1;
+	}
+	if(pid == 0)
+	{
+		int r = rep;
+		while(r-- > 0)
+		{	
+			// analiza
+		  upTime();		
+		  // espera wait segundos
+			if(r > 0)
+				sleep(wait);
+		}
+	  printf("%d: SubProceso finalizado.\n", getpid());
+		exit(0);
+	}
+
+	// segundo fork
+	pid = fork();
+	if(pid == -1)
+	{
+	  printf("Error al crear proceso hijo \n");
+		printf("%s", strerror(errno));
+		return 1;
+	}
+	if(pid == 0)
+	{
+		int r = rep;
+		while(r-- > 0)
+		{	
+			// analiza
+		  RamInfo();
+		  // espera wait segundos
+			if(r > 0)
+				sleep(wait);
+		}
+	  printf("%d: SubProceso finalizado.\n", getpid());
+		exit(0);
+	}
+
+	// tercer fork
+	pid = fork();
+	if(pid == -1)
+	{
+	  printf("Error al crear proceso hijo \n");
+		printf("%s", strerror(errno));
+		return 1;
+	}
+	if(pid == 0)
+	{
+		int r = rep;
+		while(r-- > 0)
+		{	
+			// analiza
+		  ProcsInfo();
+		  // espera wait segundos
+			if(r > 0)
+				sleep(wait);
+		}
+	  printf("%d: SubProceso finalizado.\n", getpid());
+		exit(0); 
+	}     
+
   // fin del proceso padre
-  printf("%d:Programa finalizado\n", getpid());
+  sleep(wait*rep);
+  printf("%d: Programa finalizado\n", getpid());
+
+  return 0;
 
 }
 
@@ -82,7 +120,6 @@ void upTime()
 	struct sysinfo info;
 	sysinfo(&info);
   printf("%d: El sistema lleva %lus encendido.\n", getpid(), info.uptime);
-  printf("%d: SubProceso finalizado.\n", getpid());
   return;
 }
 
@@ -92,7 +129,6 @@ void RamInfo()
 	struct sysinfo info;
 	sysinfo(&info);
   printf("%d: Disponibles %luMB de %luMB.\n", getpid(), (info.freeram)/1048576, (info.totalram)/1048576);
-  printf("%d: SubProceso finalizado.\n", getpid());
   return;
 }
 
@@ -102,6 +138,10 @@ void ProcsInfo()
 	struct sysinfo info;
 	sysinfo(&info);
   printf("%d: Hay %d procesos en ejecucion.\n", getpid(), info.procs);
-  printf("%d: SubProceso finalizado.\n", getpid());
   return;
+}
+
+void writeSHM(char* string)
+{
+
 }
