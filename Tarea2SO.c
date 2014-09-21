@@ -3,22 +3,7 @@
 #include <sys/sysinfo.h>
 #include <unistd.h>
 #include <errno.h>
- /* crear subprocesos mediante fork
-  * cada subproceso entregar informacion sobre estado del sistema y enviar resultados al padre mediante
-  * memoria compartida
-  * 
-  * Registrar los resultados, PID del proceso que envia el mensaje y el contenido en el archivo log.txt
-  * Cuando hijo termine escribir PID subproveso finalizado
-  * CUando padre termine escribir PID Programa finalizado
-  * 
-  * Cada hijo analiza el sistema n veces, el usuario determina n.
-  * Cada hijo toma el tiempo de espera entre cada analisis realizado
-  * 
-  * Padre creare 3 subprocesos que funcionen en paralelo
-  *el primero de ellos entrega tiempo en segundos que lleva encendido el sistema
-  * el segundo entrega cantidad de ram disponible sobre la total
-  * tercero indica la cantidad de procesos en ejecucion
-  * */
+
 void upTime();
 void RamInfo();
 void ProcsInfo();
@@ -34,24 +19,25 @@ int main (int argc, char const *argv[])
   int rep, wait;
   sscanf(argv[1], "%d", &rep);
   sscanf(argv[2], "%d", &wait);
+  
+  // analiza el sistema rep veces
+  while(rep-- > 0)
+  {
+  	// primer fork
+		pid_t pid = fork();
+		if(pid == -1)
+		{
+		  printf("Error al crear proceso hijo \n");
+			printf("%s", strerror(errno));
+			return 0;
+		}
+		if(pid == 0)
+		{
+		  upTime();
+			return 0;
+		}
 
-  struct sysinfo info;
-  sysinfo(&info);
-
-	pid_t pid = fork();
-	if(pid == -1)
-	{
-	  printf("Error al crear proceso hijo \n");
-		printf("%s", strerror(errno));
-		return 0;
-	}
-	if(pid == 0)
-	{
-	  upTime();
-		return 0;
-	}
-	else if(pid >0)
-	{
+  	// segundo fork
 		pid = fork();
 		if(pid == -1)
 		{
@@ -64,22 +50,30 @@ int main (int argc, char const *argv[])
 		  RamInfo();
 			return 0;
 		}
-		else if(pid >0)
+
+  	// tercer fork
+		pid = fork();
+		if(pid == -1)
 		{
-			pid = fork();
-			if(pid == -1)
-			{
-			  printf("Error al crear proceso hijo \n");
-				printf("%s", strerror(errno));
-				return 0;
-			}
-			if(pid == 0)
-			{
-			  ProcsInfo();
-				return 0;
-			}
-		} 
-	}     
+		  printf("Error al crear proceso hijo \n");
+			printf("%s", strerror(errno));
+			return 0;
+		}
+		if(pid == 0)
+		{
+		  ProcsInfo();
+			return 0;
+		}     
+
+		// espera wait segundos
+		sleep(wait);
+		// salto de linea para mejor lectura
+		printf("\n");
+  }
+  
+  // fin del proceso padre
+  printf("%d:Programa finalizado\n", getpid());
+
 }
 
 //Hace fork y escribe el tiempo del sistema
@@ -97,7 +91,7 @@ void RamInfo()
 {
 	struct sysinfo info;
 	sysinfo(&info);
-  printf("%d: Disponibles %lu de %lu.\n", getpid(), info.totalram, info.freeram);
+  printf("%d: Disponibles %luMB de %luMB.\n", getpid(), (info.freeram)/1048576, (info.totalram)/1048576);
   printf("%d: SubProceso finalizado.\n", getpid());
   return;
 }
