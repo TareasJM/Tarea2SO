@@ -1,0 +1,10 @@
+17484: El sistema lleva 25998s encendido.
+
+17485: Disponibles 768MB de 3888MB.
+
+17486: Hay 458 procesos en ejecucion.
+
+17584: El sistema lleva 26200s encendido.
+
+17625: El sistema lleva 26258s encendido.
+
