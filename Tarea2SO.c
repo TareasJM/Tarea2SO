@@ -129,15 +129,10 @@ int main (int argc, char const *argv[])
 		exit(0); 
 	}     
 
-  // fin del proceso padre
   int i = (3*rep);
-  while(i > 0)
+  while(i-- > 0)
   {
-  	// cambiar por semaforo while(cantRead(shm))
   	readSHM(shm, sem);
-  	printf("i= %d\n", i);
-  	i--;
-
   }
   printf("%d: Programa finalizado\n", getpid());
 
@@ -145,7 +140,7 @@ int main (int argc, char const *argv[])
 
 }
 
-//Hace fork y escribe el tiempo del sistema
+// Escribe el tiempo del sistema
 void upTime(char* shm, int pid, sem_t *sem)
 {
 	struct sysinfo info;
@@ -158,7 +153,7 @@ void upTime(char* shm, int pid, sem_t *sem)
   return;
 }
 
-//Hace fork y escribe la información de la RAM del sistema
+// Escribe la información de la RAM del sistema
 void RamInfo(char* shm, int pid, sem_t *sem)
 {
 	struct sysinfo info;
@@ -171,75 +166,37 @@ void RamInfo(char* shm, int pid, sem_t *sem)
   return;
 }
 
-//Hace fork y escribe la información de Procesos del sistema
+// Escribe la información de Procesos del sistema
 void ProcsInfo(char* shm, int pid, sem_t *sem)
 {
 	struct sysinfo info;
 	sysinfo(&info);
-	// cambiar por semaforo while(cantWrite(shmMsg));
   char *msg = (char *)malloc(sizeof(char)*256);
   sprintf(msg, "%d: Hay %d procesos en ejecucion.\n", pid, info.procs);
 	writeSHM(shm, msg, sem);
 	free(msg);
   return;
 }
-/*
-// Revisa si los procesos hijos pueden escribir en la memoria compartida
-int cantWrite(char* shm)
-{
-	char *msg;
-	if ((msg = shmat(shmMsg, NULL, 0)) == (char *) -1)
-  {
-	  printf("Error: shmat en write\n");
-	  return 1;
-  }
 
-  if (*msg == '1')
-  {
-  	return 1;
-  }
-  // aqui se activa el semaforo
-	return 0;
-}
-
-// Revisa si el padre tiene mensajes para leer en la memoria compartida
-int cantRead(char* shm)
-{
-	//wait(mensaje)
-	if (*msg == '0')
-  {
-  	return 1;
-  }
-  // aqui se activa el semaforo
-  return 0;
-
-}*/
-
+// Espera a que haya un mensaje en SHM y lo escribe a log.txt
 void readSHM(char* shm, sem_t *sem)
 {	
 	sem_wait(&sem[1]); // espera a que haya mensaje
 	sem_wait(&sem[0]);
+
   FILE *p;
   p = fopen("log.txt","a+");
-
-  //semaforo mesaje++
-
   fprintf(p, "%s\n", shm);
   fclose(p);
+
   sem_post(&sem[1]);
   sem_post(&sem[0]);
-  
 }
 
+// Espera a que SHM esté vacia y escribe un mensaje
 void writeSHM(char* shm, char* string, sem_t *sem)
 {
-	int value;
-	sem_getvalue(&sem[1], &value);
-	while(value == 1)
-	{	
-
-		sem_getvalue(&sem[1], &value);
-	}
+	sem_wait(&sem[1]);
 	sem_wait(&sem[0]);
 
 	strcpy(shm, string);
