@@ -5,7 +5,7 @@
 #include <errno.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
-#include <sys/sem.h>
+#include <semaphore.h>
 #include <stdlib.h>
 
 //Tamaño y nombre de memoria compartida
@@ -15,10 +15,8 @@
 void upTime();
 void RamInfo();
 void ProcsInfo();
-int cantWrite(int shmid);
-int cantRead(int shmid);
-void readSHM(int shmid);
-void writeSHM(int shmid, char* string);
+void readSHM(char* shm, sem_t *sem);
+void writeSHM(char* shm, char* string, sem_t *sem);
 
 int main (int argc, char const *argv[])
 { 
@@ -33,26 +31,33 @@ int main (int argc, char const *argv[])
   sscanf(argv[1], "%d", &rep);
   sscanf(argv[2], "%d", &wait);
 
-  int shmid;
-  char *msg;
+	int shmMsg;
+  char *shm;
+  sem_t *sem = (sem_t*)malloc(sizeof(sem_t)*2); // semaforos
+  sem_init(&sem[0],1,1); // semaforo de memoria
+  sem_init(&sem[1],1,0); // semaforo de mensaje
+
+  // Limpia el txt
+  FILE *p;
+  p = fopen("log.txt","w");
+  fclose(p);
+
 
   // pide la memoria compartida
-  if ((shmid = shmget(SHMK, SHMSZ, IPC_CREAT | 0666)) < 0)
+  if ((shmMsg = shmget(SHMK, SHMSZ, IPC_CREAT | 0666)) < 0)
   {
 	  printf("Error: shmget\n");
 	  return 1;
   }
 
-  if ((msg = shmat(shmid, NULL, 0)) == (char *) -1)
+  if ((shm = shmat(shmMsg, NULL, 0)) == (char *) -1)
   {
 	  printf("Error: shmat\n");
 	  return 1;
   }
+  *shm = '\0';
 
-  *msg++ = '0';
-  *msg-- = '\0';
-
-	// primer fork
+ 	// primer fork
 	pid_t pid = fork();
 	if(pid == -1)
 	{
@@ -66,12 +71,12 @@ int main (int argc, char const *argv[])
 		while(r-- > 0)
 		{	
 			// analiza
-		  upTime(shmid, getpid());		
+		  upTime(shm, getpid(), sem);		
 		  // espera wait segundos
 			if(r > 0)
 				sleep(wait);
 		}
-		while(cantWrite(shmid));
+		// cambiar por semaforo while(cantWrite(shm));
 	  printf("%d: SubProceso finalizado.\n", getpid());
 		exit(0);
 	}
@@ -87,16 +92,15 @@ int main (int argc, char const *argv[])
 	if(pid == 0)
 	{
 		int r = rep;
-		sleep(5);
 		while(r-- > 0)
 		{	
 			// analiza
-		  RamInfo(shmid, getpid());
+		  RamInfo(shm, getpid(), sem);
 		  // espera wait segundos
 			if(r > 0)
 				sleep(wait);
 		}
-		while(cantWrite(shmid));
+		// cambiar por semaforo while(cantWrite(shm));
 	  printf("%d: SubProceso finalizado.\n", getpid());
 		exit(0);
 	}
@@ -111,28 +115,29 @@ int main (int argc, char const *argv[])
 	}
 	if(pid == 0)
 	{
-		sleep(10);
 		int r = rep;
 		while(r-- > 0)
 		{	
 			// analiza
-		  ProcsInfo(shmid, getpid());
+		  ProcsInfo(shm, getpid(), sem);
 		  // espera wait segundos
 			if(r > 0)
 				sleep(wait);
 		}
-		while(cantWrite(shmid));
+		// cambiar por semaforo while(cantWrite(shm));
 	  printf("%d: SubProceso finalizado.\n", getpid());
 		exit(0); 
 	}     
 
   // fin del proceso padre
-  int i = (3*rep) + 3;
-  while(i-- > 0)
+  int i = (3*rep);
+  while(i > 0)
   {
-  	while(cantRead(shmid))
-  		sleep(1);
-  	readSHM(shmid);
+  	// cambiar por semaforo while(cantRead(shm))
+  	readSHM(shm, sem);
+  	printf("i= %d\n", i);
+  	i--;
+
   }
   printf("%d: Programa finalizado\n", getpid());
 
@@ -141,49 +146,49 @@ int main (int argc, char const *argv[])
 }
 
 //Hace fork y escribe el tiempo del sistema
-void upTime(int shmid, int pid)
+void upTime(char* shm, int pid, sem_t *sem)
 {
 	struct sysinfo info;
 	sysinfo(&info);
-	while(cantWrite(shmid));
+	// cambiar por semaforo while(cantWrite(shmMsg));
 	char *msg = (char *)malloc(sizeof(char)*256);
   sprintf(msg, "%d: El sistema lleva %lus encendido.\n", pid, info.uptime);
-	writeSHM(shmid, msg);
+	writeSHM(shm, msg, sem);
 	free(msg);
   return;
 }
 
 //Hace fork y escribe la información de la RAM del sistema
-void RamInfo(int shmid, int pid)
+void RamInfo(char* shm, int pid, sem_t *sem)
 {
 	struct sysinfo info;
 	sysinfo(&info);
-	while(cantWrite(shmid));
+	// cambiar por semaforo while(cantWrite(shmMsg));
   char *msg = (char *)malloc(sizeof(char)*256);
   sprintf(msg, "%d: Disponibles %luMB de %luMB.\n", pid, (info.freeram)/1048576, (info.totalram)/1048576);
-	writeSHM(shmid, msg);
+	writeSHM(shm, msg, sem);
 	free(msg);
   return;
 }
 
 //Hace fork y escribe la información de Procesos del sistema
-void ProcsInfo(int shmid, int pid)
+void ProcsInfo(char* shm, int pid, sem_t *sem)
 {
 	struct sysinfo info;
 	sysinfo(&info);
-	while(cantWrite(shmid));
+	// cambiar por semaforo while(cantWrite(shmMsg));
   char *msg = (char *)malloc(sizeof(char)*256);
   sprintf(msg, "%d: Hay %d procesos en ejecucion.\n", pid, info.procs);
-	writeSHM(shmid, msg);
+	writeSHM(shm, msg, sem);
 	free(msg);
   return;
 }
-
+/*
 // Revisa si los procesos hijos pueden escribir en la memoria compartida
-int cantWrite(int shmid)
+int cantWrite(char* shm)
 {
 	char *msg;
-	if ((msg = shmat(shmid, NULL, 0)) == (char *) -1)
+	if ((msg = shmat(shmMsg, NULL, 0)) == (char *) -1)
   {
 	  printf("Error: shmat en write\n");
 	  return 1;
@@ -198,58 +203,49 @@ int cantWrite(int shmid)
 }
 
 // Revisa si el padre tiene mensajes para leer en la memoria compartida
-int cantRead(int shmid)
+int cantRead(char* shm)
 {
-	char *msg;
-	if ((msg = shmat(shmid, NULL, 0)) == (char *) -1)
-  {
-	  printf("Error: shmat\n");
-	  return 1;
-  }
-
-  if (*msg == '0')
+	//wait(mensaje)
+	if (*msg == '0')
   {
   	return 1;
   }
   // aqui se activa el semaforo
   return 0;
 
-}
+}*/
 
-void readSHM(int shmid)
-{
-	char *msg;
-	if ((msg = shmat(shmid, NULL, 0)) == (char *) -1)
-  {
-	  printf("Error: shmat\n");
-	  exit(1);
-  }
-  printf("shm: %s\n", msg);
+void readSHM(char* shm, sem_t *sem)
+{	
+	sem_wait(&sem[1]); // espera a que haya mensaje
+	sem_wait(&sem[0]);
   FILE *p;
   p = fopen("log.txt","a+");
 
-  *msg++ = '0';
+  //semaforo mesaje++
 
-  fprintf(p, "%s\n", msg);
-
+  fprintf(p, "%s\n", shm);
   fclose(p);
+  sem_post(&sem[1]);
+  sem_post(&sem[0]);
   
 }
 
-void writeSHM(int shmid, char* string)
+void writeSHM(char* shm, char* string, sem_t *sem)
 {
-	char *msg;
-	if ((msg = shmat(shmid, NULL, 0)) == (char *) -1)
-  {
-	  printf("Error: shmat\n");
-	  exit(1);
-  }
+	int value;
+	sem_getvalue(&sem[1], &value);
+	while(value == 1)
+	{	
 
-  *msg++ = '1';
+		sem_getvalue(&sem[1], &value);
+	}
+	sem_wait(&sem[0]);
 
-  while(*string != '\0')
-  {
-  	*msg++ = *string++;
-  }
-  *msg = '\0';
+	strcpy(shm, string);
+
+  sem_post(&sem[1]);
+  sem_post(&sem[0]);
+
 }
+//compilar gcc Tarea2SO.c -lpthread -Wall -lm
