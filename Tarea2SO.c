@@ -11,10 +11,13 @@
 //Tamaño y nombre de memoria compartida
 #define SHMSZ 256 // 1 string de 256 chars
 #define SHMK 1234 // nombre random
+#define SEMSZ 96 //  3 semáforos
+#define SEMK 1235 // nombre random + 1
 
-void upTime();
-void RamInfo();
-void ProcsInfo();
+void upTime(char* shm, int pid, sem_t *sem);
+void ramInfo(char* shm, int pid, sem_t *sem);
+void procsInfo(char* shm, int pid, sem_t *sem);
+void finalizeProc(char* shm, int pid, sem_t *sem);
 void readSHM(char* shm, sem_t *sem);
 void writeSHM(char* shm, char* string, sem_t *sem);
 
@@ -25,17 +28,34 @@ int main (int argc, char const *argv[])
   if (argc != 3)
   {
     printf("Uso: ./Tarea2SO <#Repeticiones> <TiempoEspera>\n");
-    return 0; //Si hay error, termina
+    return 1; //Si hay error, termina
   }
   int rep, wait;
   sscanf(argv[1], "%d", &rep);
   sscanf(argv[2], "%d", &wait);
 
 	int shmMsg;
+	int shmSem;
   char *shm;
-  sem_t *sem = (sem_t*)malloc(sizeof(sem_t)*2); // semaforos
-  sem_init(&sem[0],1,1); // semaforo de memoria
-  sem_init(&sem[1],1,0); // semaforo de mensaje
+  sem_t *sem;
+
+  // pide la memoria compartida
+  if ((shmSem = shmget(SEMK, SEMSZ, IPC_CREAT | 0666)) < 0)
+  {
+	  printf("Error: shmget\n");
+	  return 1;
+  }
+
+  if ((sem = shmat(shmSem, NULL, 0)) == (sem_t *) -1)
+  {
+	  printf("Error: shmat\n");
+	  return 1;
+  }
+
+  // sem_t *sem = (sem_t*)malloc(sizeof(sem_t)*3); // semaforos (cuando es 1 entra :L)
+  sem_init(&sem[0],1,1); // semaforo de memoria (mutex)
+  sem_init(&sem[1],1,1); // semaforo de mensaje (empty)
+  sem_init(&sem[2],1,0); // semaforo de mensaje (full)
 
   // Limpia el txt
   FILE *p;
@@ -71,13 +91,12 @@ int main (int argc, char const *argv[])
 		while(r-- > 0)
 		{	
 			// analiza
-		  upTime(shm, getpid(), sem);		
+		  upTime(shm, getpid(), sem);
 		  // espera wait segundos
 			if(r > 0)
 				sleep(wait);
 		}
-		// cambiar por semaforo while(cantWrite(shm));
-	  printf("%d: SubProceso finalizado.\n", getpid());
+	  finalizeProc(shm, getpid(), sem);
 		exit(0);
 	}
 
@@ -95,13 +114,12 @@ int main (int argc, char const *argv[])
 		while(r-- > 0)
 		{	
 			// analiza
-		  RamInfo(shm, getpid(), sem);
+		  ramInfo(shm, getpid(), sem);
 		  // espera wait segundos
 			if(r > 0)
 				sleep(wait);
 		}
-		// cambiar por semaforo while(cantWrite(shm));
-	  printf("%d: SubProceso finalizado.\n", getpid());
+	  finalizeProc(shm, getpid(), sem);
 		exit(0);
 	}
 
@@ -119,25 +137,31 @@ int main (int argc, char const *argv[])
 		while(r-- > 0)
 		{	
 			// analiza
-		  ProcsInfo(shm, getpid(), sem);
+		  procsInfo(shm, getpid(), sem);
 		  // espera wait segundos
 			if(r > 0)
 				sleep(wait);
 		}
-		// cambiar por semaforo while(cantWrite(shm));
-	  printf("%d: SubProceso finalizado.\n", getpid());
+	  finalizeProc(shm, getpid(), sem);
 		exit(0); 
 	}     
 
-  int i = (3*rep);
+  int i = ((3*rep) + 3);
   while(i-- > 0)
   {
   	readSHM(shm, sem);
   }
-  printf("%d: Programa finalizado\n", getpid());
+
+  p = fopen("log.txt","a+");
+  fprintf(p, "%d: Programa finalizado\n", getpid());
+  fclose(p);
+  sem_destroy(&sem[0]);
+  sem_destroy(&sem[1]);
+  sem_destroy(&sem[2]);
+  shmdt(shm);
+  shmdt(sem);
 
   return 0;
-
 }
 
 // Escribe el tiempo del sistema
@@ -145,29 +169,25 @@ void upTime(char* shm, int pid, sem_t *sem)
 {
 	struct sysinfo info;
 	sysinfo(&info);
-	// cambiar por semaforo while(cantWrite(shmMsg));
 	char *msg = (char *)malloc(sizeof(char)*256);
   sprintf(msg, "%d: El sistema lleva %lus encendido.\n", pid, info.uptime);
 	writeSHM(shm, msg, sem);
 	free(msg);
-  return;
 }
 
 // Escribe la información de la RAM del sistema
-void RamInfo(char* shm, int pid, sem_t *sem)
+void ramInfo(char* shm, int pid, sem_t *sem)
 {
 	struct sysinfo info;
 	sysinfo(&info);
-	// cambiar por semaforo while(cantWrite(shmMsg));
   char *msg = (char *)malloc(sizeof(char)*256);
   sprintf(msg, "%d: Disponibles %luMB de %luMB.\n", pid, (info.freeram)/1048576, (info.totalram)/1048576);
 	writeSHM(shm, msg, sem);
 	free(msg);
-  return;
 }
 
 // Escribe la información de Procesos del sistema
-void ProcsInfo(char* shm, int pid, sem_t *sem)
+void procsInfo(char* shm, int pid, sem_t *sem)
 {
 	struct sysinfo info;
 	sysinfo(&info);
@@ -175,34 +195,50 @@ void ProcsInfo(char* shm, int pid, sem_t *sem)
   sprintf(msg, "%d: Hay %d procesos en ejecucion.\n", pid, info.procs);
 	writeSHM(shm, msg, sem);
 	free(msg);
-  return;
 }
 
-// Espera a que haya un mensaje en SHM y lo escribe a log.txt
+// Escribe la finalización de un Subproceso
+void finalizeProc(char* shm, int pid, sem_t *sem)
+{
+	char *msg = (char *)malloc(sizeof(char)*256);
+  sprintf(msg, "%d: SubProceso finalizado.\n", pid);
+	writeSHM(shm, msg, sem);
+	free(msg);
+}
+
+// Espera a que haya un mensaje en SHM y lo escribe a log.txt (consumer)
 void readSHM(char* shm, sem_t *sem)
 {	
-	sem_wait(&sem[1]); // espera a que haya mensaje
-	sem_wait(&sem[0]);
+	// printf("readSHM: wait(full)\n");
+	sem_wait(&sem[2]); // full
+	// printf("readSHM: wait(mutex)\n");
+	sem_wait(&sem[0]); // mutex
 
   FILE *p;
   p = fopen("log.txt","a+");
-  fprintf(p, "%s\n", shm);
+  fprintf(p, "%s", shm);
   fclose(p);
 
-  sem_post(&sem[1]);
-  sem_post(&sem[0]);
+	// printf("readSHM: post(mutex)\n");
+  sem_post(&sem[0]); // mutex
+	// printf("readSHM: post(empty)\n");
+  sem_post(&sem[1]); // empty
 }
 
-// Espera a que SHM esté vacia y escribe un mensaje
+// Espera a que SHM esté vacia y escribe un mensaje (producer)
 void writeSHM(char* shm, char* string, sem_t *sem)
 {
-	sem_wait(&sem[1]);
-	sem_wait(&sem[0]);
+	// printf("writeSHM: wait(empty)\n");
+	sem_wait(&sem[1]); // empty
+	// printf("writeSHM: wait(mutex)\n");
+	sem_wait(&sem[0]); // mutex
 
 	strcpy(shm, string);
 
-  sem_post(&sem[1]);
-  sem_post(&sem[0]);
+	// printf("writeSHM: post(mutex)\n");
+  sem_post(&sem[0]); // mutex
+	// printf("writeSHM: post(full)\n");
+  sem_post(&sem[2]); // full
 
 }
 //compilar gcc Tarea2SO.c -lpthread -Wall -lm
