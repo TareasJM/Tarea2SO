@@ -39,19 +39,20 @@ int main (int argc, char const *argv[])
   char *shm;
   sem_t *sem;
 
-  // pide la memoria compartida para los semáforos
+  // pide la memoria compartida
   if ((shmSem = shmget(SEMK, SEMSZ, IPC_CREAT | 0666)) < 0)
   {
 	  printf("Error: shmget\n");
 	  return 1;
   }
-  // asigna la memoria
+
   if ((sem = shmat(shmSem, NULL, 0)) == (sem_t *) -1)
   {
 	  printf("Error: shmat\n");
 	  return 1;
   }
 
+  // sem_t *sem = (sem_t*)malloc(sizeof(sem_t)*3); // semaforos (cuando es 1 entra :L)
   sem_init(&sem[0],1,1); // semaforo de memoria (mutex)
   sem_init(&sem[1],1,1); // semaforo de mensaje (empty)
   sem_init(&sem[2],1,0); // semaforo de mensaje (full)
@@ -62,13 +63,13 @@ int main (int argc, char const *argv[])
   fclose(p);
 
 
-  // pide la memoria compartida para el mensaje
+  // pide la memoria compartida
   if ((shmMsg = shmget(SHMK, SHMSZ, IPC_CREAT | 0666)) < 0)
   {
 	  printf("Error: shmget\n");
 	  return 1;
   }
-  // asigna la memoria
+
   if ((shm = shmat(shmMsg, NULL, 0)) == (char *) -1)
   {
 	  printf("Error: shmat\n");
@@ -143,20 +144,17 @@ int main (int argc, char const *argv[])
 		}
 	  finalizeProc(shm, getpid(), sem);
 		exit(0); 
-	} 
+	}     
 
-	// Solo el padre llega hasta aquí
   int i = ((3*rep) + 3);
-  // Lee todos los mensajes
   while(i-- > 0)
   {
   	readSHM(shm, sem);
   }
-  // Todos los mensajes escritos, se prepara para finalizar
+
   p = fopen("log.txt","a+");
   fprintf(p, "%d: Programa finalizado\n", getpid());
   fclose(p);
-  // libera memoria
   sem_destroy(&sem[0]);
   sem_destroy(&sem[1]);
   sem_destroy(&sem[2]);
